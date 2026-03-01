@@ -107,6 +107,19 @@ systemctl daemon-reload
 systemctl enable clevis-luks-unlocker.service
 ```
 
+To test the service manually before the next reboot:
+
+```bash
+systemctl start clevis-luks-unlocker.service
+```
+
+Then check the result:
+
+```bash
+systemctl status clevis-luks-unlocker.service
+journalctl -u clevis-luks-unlocker.service
+```
+
 ## Boot sequence
 
 1. Network comes up (`network-online.target`)
