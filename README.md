@@ -55,21 +55,36 @@ clevis luks list -d /dev/pve/lxc-<CTID>-<NAME>
 
 ### 4. Install the unlock script
 
+Clone the repository to `/opt/clevis-luks-unlocker`:
+
 ```bash
-cp unlock-lxc.sh /usr/local/bin/unlock-lxc.sh
-chmod +x /usr/local/bin/unlock-lxc.sh
+git clone https://github.com/henne93/clevis-luks-unlocker.git /opt/clevis-luks-unlocker
+chmod +x /opt/clevis-luks-unlocker/clevis-luks-unlocker.sh
 ```
 
-Edit the script to match your environment:
+Edit `/opt/clevis-luks-unlocker/clevis-luks-unlocker.conf` to match your environment:
 
-- `TANG_URL` — URL of your Tang server
-- `TANG_TIMEOUT` — seconds to wait for Tang availability (default: 60)
-- `UNLOCK_TIMEOUT` — timeout per volume unlock (default: 15)
-- Add/remove `unlock` calls at the bottom for your volumes
+| Key              | Description                                          | Default                   |
+|------------------|------------------------------------------------------|---------------------------|
+| `LOG`            | Path to the log file                                 | `/var/log/unlock-lxc.log` |
+| `TANG_TIMEOUT`   | Total wall-clock seconds to wait for any Tang server | `60`                      |
+| `RETRY_INTERVAL` | Seconds to sleep between Tang retry cycles           | `5`                       |
+| `UNLOCK_TIMEOUT` | Timeout in seconds per volume unlock attempt         | `15`                      |
+| `TANG_URLS`      | Space-separated list of Tang server URLs             | —                         |
+| `LUKS_VOLUMES`   | Space-separated list of `device:mapper-name` pairs   | —                         |
+
+Example:
+
+```bash
+TANG_URLS="https://tang1.example.com https://tang2.example.com"
+LUKS_VOLUMES="/dev/pve/lxc-100-data:lxc-100-data /dev/pve/lxc-101-data:lxc-101-data"
+```
+
+The script tries each Tang URL in order and uses the first one that responds. If none respond, it sleeps `RETRY_INTERVAL` seconds and retries, until `TANG_TIMEOUT` wall-clock seconds have elapsed.
 
 ### 5. Create and enable the systemd service
 
-Create `/etc/systemd/system/unlock-lxc.service`:
+Create `/etc/systemd/system/clevis-luks-unlocker.service`:
 
 ```ini
 [Unit]
@@ -80,7 +95,7 @@ Before=pve-guests.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/unlock-lxc.sh
+ExecStart=/opt/clevis-luks-unlocker/clevis-luks-unlocker.sh
 RemainAfterExit=yes
 
 [Install]
@@ -89,13 +104,13 @@ WantedBy=multi-user.target
 
 ```bash
 systemctl daemon-reload
-systemctl enable unlock-lxc.service
+systemctl enable clevis-luks-unlocker.service
 ```
 
 ## Boot sequence
 
 1. Network comes up (`network-online.target`)
-2. `unlock-lxc.service` runs — polls Tang, unlocks LUKS volumes
+2. `clevis-luks-unlocker.service` runs — polls Tang servers, unlocks LUKS volumes
 3. `pve-guests.service` starts — LXC containers launch with decrypted mountpoints available
 
 The Tang server **must** be reachable before the Proxmox host completes boot. It must not run on the same host.
@@ -111,4 +126,4 @@ pct start <CTID>
 
 ## Logs
 
-All unlock activity is logged to `/var/log/unlock-lxc.log`.
+All unlock activity is logged to the path configured via `LOG` in `clevis-luks-unlocker.conf` (default: `/var/log/unlock-lxc.log`).
